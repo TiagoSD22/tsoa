@@ -243,6 +243,7 @@ export class SpecGenerator3 extends SpecGenerator {
     }
 
     const bodyParams = method.parameters.filter(p => p.in === 'body');
+    const bodyPropParams = method.parameters.filter(p => p.in === 'body-prop');
 
     pathMethod.parameters = method.parameters
       .filter(p => {
@@ -256,6 +257,8 @@ export class SpecGenerator3 extends SpecGenerator {
 
     if (bodyParams.length > 0) {
       pathMethod.requestBody = this.buildRequestBody(controllerName, method, bodyParams[0]);
+    } else if (bodyPropParams.length > 0) {
+      pathMethod.requestBody = this.buildRequestBodyUsingBodyProps(controllerName, method);
     }
   }
 
@@ -313,6 +316,35 @@ export class SpecGenerator3 extends SpecGenerator {
     };
 
     return requestBody;
+  }
+
+  private buildRequestBodyUsingBodyProps(controllerName: string, method: Tsoa.Method) {
+    const properties = {} as { [name: string]: Swagger.Schema3 };
+    const required: string[] = [];
+
+    method.parameters
+      .filter(p => p.in === 'body-prop')
+      .forEach(p => {
+        properties[p.name] = this.getSwaggerType(p.type) as Swagger.Schema3;
+        properties[p.name].default = p.default;
+        properties[p.name].description = p.description;
+
+        if (p.required) {
+          required.push(p.name);
+        }
+      });
+
+    if (!Object.keys(properties).length) {
+      return undefined;
+    }
+
+    let schema: Swagger.Schema = { type: 'object', properties: properties, required: required };
+    return {
+      required: required.length > 0,
+      content: {
+        'application/json': { schema } as Swagger.MediaType,
+      },
+    } as Swagger.RequestBody;
   }
 
   private buildParameter(source: Tsoa.Parameter): Swagger.Parameter {
