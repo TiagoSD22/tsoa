@@ -5,6 +5,7 @@ import { isVoidType } from '../utils/isVoidType';
 import { convertColonPathParams, normalisePath } from './../utils/pathUtils';
 import { SpecGenerator } from './specGenerator';
 import { Swagger } from './swagger';
+import { UnspecifiedObject } from '../utils/unspecifiedObject';
 
 export class SpecGenerator2 extends SpecGenerator {
   constructor(protected readonly metadata: Tsoa.Metadata, protected readonly config: ExtendedSpecConfig) {
@@ -44,11 +45,17 @@ export class SpecGenerator2 extends SpecGenerator {
     if (this.config.license) {
       spec.info.license = { name: this.config.license };
     }
+
+    if (this.config.contact) {
+      spec.info.contact = this.config.contact;
+    }
+
     if (this.config.spec) {
       this.config.specMerging = this.config.specMerging || 'immediate';
       const mergeFuncs: { [key: string]: any } = {
         immediate: Object.assign,
         recursive: require('merge').recursive,
+        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => require('deepmerge').all([spec, merge]),
       };
 
       spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
@@ -160,7 +167,7 @@ export class SpecGenerator2 extends SpecGenerator {
 
     pathMethod.parameters = method.parameters
       .filter(p => {
-        return !(p.in === 'request' || p.in === 'body-prop');
+        return !(p.in === 'request' || p.in === 'body-prop' || p.in === 'res');
       })
       .map(p => this.buildParameter(p));
 
@@ -171,6 +178,8 @@ export class SpecGenerator2 extends SpecGenerator {
     if (pathMethod.parameters.filter((p: Swagger.BaseParameter) => p.in === 'body').length > 1) {
       throw new Error('Only one body parameter allowed per controller method.');
     }
+
+    method.extensions.forEach(ext => (pathMethod[ext.key] = ext.value));
   }
 
   protected buildOperation(controllerName: string, method: Tsoa.Method): Swagger.Operation {
@@ -183,8 +192,8 @@ export class SpecGenerator2 extends SpecGenerator {
       if (res.schema && !isVoidType(res.schema)) {
         swaggerResponses[res.name].schema = this.getSwaggerType(res.schema);
       }
-      if (res.examples) {
-        swaggerResponses[res.name].examples = { 'application/json': res.examples };
+      if (res.examples && res.examples[0]) {
+        swaggerResponses[res.name].examples = { 'application/json': res.examples[0] };
       }
     });
 
@@ -205,7 +214,7 @@ export class SpecGenerator2 extends SpecGenerator {
         properties[p.name] = this.getSwaggerType(p.type) as Swagger.Schema2;
         properties[p.name].default = p.default;
         properties[p.name].description = p.description;
-        properties[p.name].example = p.example;
+        properties[p.name].example = p.example === undefined ? undefined : p.example[0];
 
         if (p.required) {
           required.push(p.name);
@@ -235,7 +244,6 @@ export class SpecGenerator2 extends SpecGenerator {
     let parameter = {
       default: source.default,
       description: source.description,
-      example: source.example,
       in: source.in,
       name: source.name,
       required: source.required,

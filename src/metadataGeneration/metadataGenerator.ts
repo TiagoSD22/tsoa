@@ -28,6 +28,7 @@ export class MetadataGenerator {
 
     const controllers = this.buildControllers();
 
+    this.checkForMethodSignatureDuplicates(controllers);
     this.circularDependencyResolvers.forEach(c => c(this.referenceTypeMap));
 
     return {
@@ -56,10 +57,59 @@ export class MetadataGenerator {
       }
 
       ts.forEachChild(sf, node => {
+        /**
+         * If we declare a namespace within a module, like we do in `tsoaTestModule.d.ts`,
+         * we need to explicitly get the children of the module declaration
+         * (`declare module 'tsoaTest'`) - which are the moduleBlock statements,
+         * because otherwise our type resolver cannot iterate over namespaces defined in that module.
+         */
+        if (ts.isModuleDeclaration(node)) {
+          /**
+           * For some reason unknown to me, TS resolves both `declare module` and `namespace` to
+           * the same kind (`ModuleDeclaration`). In order to figure out whether it's one or the other,
+           * we check the node flags. They tell us whether it is a namespace or not.
+           */
+          // tslint:disable-next-line:no-bitwise
+          if ((node.flags & ts.NodeFlags.Namespace) === 0 && node.body && ts.isModuleBlock(node.body)) {
+            node.body.statements.forEach(statement => {
+              this.nodes.push(statement);
+            });
+            return;
+          }
+        }
+
         this.nodes.push(node);
       });
     });
   }
+
+  private checkForMethodSignatureDuplicates = (controllers: Tsoa.Controller[]) => {
+    const map: Tsoa.MethodsSignatureMap = {};
+    controllers.forEach(controller => {
+      controller.methods.forEach(method => {
+        const signature = method.path ? `@${method.method}(${controller.path}/${method.path})` : `@${method.method}(${controller.path})`;
+        const methodDescription = `${controller.name}#${method.name}`;
+
+        if (map[signature]) {
+          map[signature].push(methodDescription);
+        } else {
+          map[signature] = [methodDescription];
+        }
+      });
+    });
+
+    let message = '';
+    Object.keys(map).forEach(signature => {
+      const controllers = map[signature];
+      if (controllers.length > 1) {
+        message += `Duplicate method signature ${signature} found in controllers: ${controllers.join(', ')}\n`;
+      }
+    });
+
+    if (message) {
+      throw new GenerateMetadataError(message);
+    }
+  };
 
   public TypeChecker() {
     return this.typeChecker;

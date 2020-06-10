@@ -1,3 +1,5 @@
+import { ExtensionType } from '../decorators/extension';
+
 export namespace Tsoa {
   export interface Metadata {
     controllers: Controller[];
@@ -12,9 +14,10 @@ export namespace Tsoa {
   }
 
   export interface Method {
+    extensions: Extension[];
     deprecated?: boolean;
     description?: string;
-    method: 'get' | 'post' | 'put' | 'delete' | 'options' | 'head' | 'patch' | 'head';
+    method: 'get' | 'post' | 'put' | 'delete' | 'options' | 'head' | 'patch';
     name: string;
     parameters: Parameter[];
     path: string;
@@ -29,14 +32,19 @@ export namespace Tsoa {
 
   export interface Parameter {
     parameterName: string;
-    example?: unknown;
+    example?: unknown[];
     description?: string;
-    in: 'query' | 'header' | 'path' | 'formData' | 'body' | 'body-prop' | 'request';
+    in: 'query' | 'header' | 'path' | 'formData' | 'body' | 'body-prop' | 'request' | 'res';
     name: string;
     required?: boolean;
     type: Type;
     default?: any;
     validators: Validators;
+  }
+
+  export interface ResParameter extends Response, Parameter {
+    in: 'res';
+    description: string;
   }
 
   export interface ArrayParameter extends Parameter {
@@ -52,11 +60,16 @@ export namespace Tsoa {
     [key: string]: string[];
   }
 
+  export interface Extension {
+    key: string;
+    value: ExtensionType | ExtensionType[];
+  }
+
   export interface Response {
     description: string;
     name: string;
     schema?: Type;
-    examples?: any;
+    examples?: unknown[];
   }
 
   export interface Property {
@@ -240,5 +253,9 @@ export namespace Tsoa {
 
   export interface ReferenceTypeMap {
     [refName: string]: Tsoa.ReferenceType;
+  }
+
+  export interface MethodsSignatureMap {
+    [signature: string]: string[];
   }
 }

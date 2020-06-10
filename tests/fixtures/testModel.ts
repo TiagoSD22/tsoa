@@ -20,6 +20,10 @@
  *   "stringArray": ["string one", "string two"],
  *   "stringValue": "a string"
  * }
+ * @example
+ * {
+ *   "stringValue": "(example2)a string"
+ * }
  */
 export interface TestModel extends Model {
   and: TypeAliasModel1 & TypeAliasModel2;
@@ -30,6 +34,7 @@ export interface TestModel extends Model {
   numberArray: number[];
   /**
    * @example "letmein"
+   * @example "letmein(example)2"
    * @format password
    */
   stringValue: string;
@@ -722,7 +727,7 @@ interface GenericContainer<T, TSameNameDifferentValue> {
 }
 
 /**
- * This should only be used inside GenericContainer to check it\'s
+ * This should only be used inside GenericContainer to check its
  * type argument T gets propagated while TSameNameDifferentValue does not
  * and instead, the interface {@link TSameNameDifferentValue} is used.
  */

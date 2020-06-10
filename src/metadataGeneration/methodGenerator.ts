@@ -2,6 +2,7 @@ import * as ts from 'typescript';
 import { isVoidType } from '../utils/isVoidType';
 import { getDecorators, getDecoratorValues, getSecurites } from './../utils/decoratorUtils';
 import { getJSDocComment, getJSDocDescription, isExistJSDocTag } from './../utils/jsDocUtils';
+import { getExtensions } from './extension';
 import { GenerateMetadataError } from './exceptions';
 import { MetadataGenerator } from './metadataGenerator';
 import { ParameterGenerator } from './parameterGenerator';
@@ -16,6 +17,7 @@ export class MethodGenerator {
   constructor(
     private readonly node: ts.MethodDeclaration,
     private readonly current: MetadataGenerator,
+    private readonly commonResponses: Tsoa.Response[],
     private readonly parentTags?: string[],
     private readonly parentSecurity?: Tsoa.Security[],
     private readonly isParentHidden?: boolean,
@@ -40,17 +42,21 @@ export class MethodGenerator {
       nodeType = typeChecker.typeToTypeNode(implicitType) as ts.TypeNode;
     }
     const type = new TypeResolver(nodeType, this.current).resolve();
-    const responses = this.getMethodResponses();
+    const responses = this.commonResponses.concat(this.getMethodResponses());
     responses.push(this.getMethodSuccessResponse(type));
+    const parameters = this.buildParameters();
+    const additionalResponses = parameters.filter((p): p is Tsoa.ResParameter => p.in === 'res');
+    responses.push(...additionalResponses);
 
     return {
+      extensions: this.getExtensions(),
       deprecated: this.getIsDeprecated(),
       description: getJSDocDescription(this.node),
       isHidden: this.getIsHidden(),
       method: this.method,
       name: (this.node.name as ts.Identifier).text,
       operationId: this.getOperationId(),
-      parameters: this.buildParameters(),
+      parameters,
       path: this.path,
       responses,
       security: this.getSecurity(),
@@ -61,15 +67,17 @@ export class MethodGenerator {
   }
 
   private buildParameters() {
-    const parameters = this.node.parameters.map(p => {
-      try {
-        return new ParameterGenerator(p, this.method, this.path, this.current).Generate();
-      } catch (e) {
-        const methodId = this.node.name as ts.Identifier;
-        const controllerId = (this.node.parent as ts.ClassDeclaration).name as ts.Identifier;
-        throw new GenerateMetadataError(`${e.message} \n in '${controllerId.text}.${methodId.text}'`);
-      }
-    });
+    const parameters = this.node.parameters
+      .map(p => {
+        try {
+          return new ParameterGenerator(p, this.method, this.path, this.current).Generate();
+        } catch (e) {
+          const methodId = this.node.name as ts.Identifier;
+          const controllerId = (this.node.parent as ts.ClassDeclaration).name as ts.Identifier;
+          throw new GenerateMetadataError(`${e.message} \n in '${controllerId.text}.${methodId.text}'`);
+        }
+      })
+      .filter((p): p is Tsoa.Parameter => p !== null);
 
     const bodyParameters = parameters.filter(p => p.in === 'body');
     const bodyProps = parameters.filter(p => p.in === 'body-prop');
@@ -81,6 +89,14 @@ export class MethodGenerator {
       throw new GenerateMetadataError(`Choose either during @Body or @BodyProp in '${this.getCurrentLocation()}' method.`);
     }
     return parameters;
+  }
+
+  private getExtensions() {
+    const extensionDecorators = this.getDecoratorsByIdentifier(this.node, 'Extension');
+    if (!extensionDecorators || !extensionDecorators.length) {
+      return [];
+    }
+    return getExtensions(extensionDecorators, this.current);
   }
 
   private getCurrentLocation() {
@@ -119,11 +135,11 @@ export class MethodGenerator {
     return decorators.map(decorator => {
       const expression = decorator.parent as ts.CallExpression;
 
-      const [name, description, examples] = getDecoratorValues(decorator, this.current.typeChecker);
+      const [name, description, example] = getDecoratorValues(decorator, this.current.typeChecker);
 
       return {
         description: description || '',
-        examples,
+        examples: example === undefined ? undefined : [example],
         name: name || '200',
         schema: expression.typeArguments && expression.typeArguments.length > 0 ? new TypeResolver(expression.typeArguments[0], this.current).resolve() : undefined,
       } as Tsoa.Response;
@@ -161,11 +177,10 @@ export class MethodGenerator {
     if (!exampleDecorators || !exampleDecorators.length) {
       return undefined;
     }
-    if (exampleDecorators.length > 1) {
-      throw new GenerateMetadataError(`Only one Example decorator allowed in '${this.getCurrentLocation}' method.`);
-    }
-    const values = getDecoratorValues(exampleDecorators[0], this.current.typeChecker);
-    return values && values[0];
+
+    const examples = exampleDecorators.map(exampleDecorator => getDecoratorValues(exampleDecorator, this.current.typeChecker)?.[0]);
+
+    return examples || [];
   }
 
   private supportsPathMethod(method: string) {

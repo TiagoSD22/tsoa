@@ -13,6 +13,11 @@ export function getDefaultOptions(outputDirectory: string = '', entryFile: strin
       host: 'localhost:3000',
       license: 'MIT',
       name: 'Test API',
+      contact: {
+        email: 'jane@doe.com',
+        name: 'Jane Doe',
+        url: 'www.jane-doe.com',
+      },
       outputDirectory,
       securityDefinitions: {
         basic: {
@@ -57,6 +62,7 @@ export function getDefaultOptions(outputDirectory: string = '', entryFile: strin
         },
       },
       version: '1.0.0',
+      tags: [{ name: 'hello', description: 'Endpoints related to greeting functionality' }],
     },
   };
 }

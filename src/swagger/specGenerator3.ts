@@ -5,11 +5,11 @@ import { isVoidType } from '../utils/isVoidType';
 import { convertColonPathParams, normalisePath } from './../utils/pathUtils';
 import { SpecGenerator } from './specGenerator';
 import { Swagger } from './swagger';
+import { UnspecifiedObject } from '../utils/unspecifiedObject';
 
 /**
  * TODO:
  * Handle formData parameters
- * Handle tags
  * Handle requestBodies of type other than json
  * Handle requestBodies as reusable objects
  * Handle headers, examples, responses, etc.
@@ -28,6 +28,7 @@ export class SpecGenerator3 extends SpecGenerator {
       openapi: '3.0.0',
       paths: this.buildPaths(),
       servers: this.buildServers(),
+      tags: this.config.tags,
     };
 
     if (this.config.spec) {
@@ -35,6 +36,7 @@ export class SpecGenerator3 extends SpecGenerator {
       const mergeFuncs: { [key: string]: any } = {
         immediate: Object.assign,
         recursive: require('merge').recursive,
+        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => require('deepmerge').all([spec, merge]),
       };
 
       spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
@@ -56,6 +58,11 @@ export class SpecGenerator3 extends SpecGenerator {
     if (this.config.license) {
       info.license = { name: this.config.license };
     }
+
+    if (this.config.contact) {
+      info.contact = this.config.contact;
+    }
+
     return info;
   }
 
@@ -86,24 +93,25 @@ export class SpecGenerator3 extends SpecGenerator {
           type: 'http',
         } as Swagger.BasicSecurity3;
       } else if (definitions[key].type === 'oauth2') {
-        const definition = definitions[key] as Swagger.OAuth2PasswordSecurity &
-          Swagger.OAuth2ApplicationSecurity &
-          Swagger.OAuth2ImplicitSecurity &
-          Swagger.OAuth2AccessCodeSecurity &
-          Swagger.OAuth2Security3;
+        const definition = definitions[key] as
+          | Swagger.OAuth2PasswordSecurity
+          | Swagger.OAuth2ApplicationSecurity
+          | Swagger.OAuth2ImplicitSecurity
+          | Swagger.OAuth2AccessCodeSecurity
+          | Swagger.OAuth2Security3;
         const oauth = (defs[key] || {
           type: 'oauth2',
           description: definitions[key].description,
-          flows: definition.flows || {},
+          flows: (this.hasOAuthFlows(definition) && definition.flows) || {},
         }) as Swagger.OAuth2Security3;
 
-        if (definition.flow === 'password') {
+        if (this.hasOAuthFlow(definition) && definition.flow === 'password') {
           oauth.flows.password = { tokenUrl: definition.tokenUrl, scopes: definition.scopes || {} } as Swagger.OAuth2SecurityFlow3;
-        } else if (definition.flow === 'accessCode') {
+        } else if (this.hasOAuthFlow(definition) && definition.flow === 'accessCode') {
           oauth.flows.authorizationCode = { tokenUrl: definition.tokenUrl, authorizationUrl: definition.authorizationUrl, scopes: definition.scopes || {} } as Swagger.OAuth2SecurityFlow3;
-        } else if (definition.flow === 'application') {
+        } else if (this.hasOAuthFlow(definition) && definition.flow === 'application') {
           oauth.flows.clientCredentials = { tokenUrl: definition.tokenUrl, scopes: definition.scopes || {} } as Swagger.OAuth2SecurityFlow3;
-        } else if (definition.flow === 'implicit') {
+        } else if (this.hasOAuthFlow(definition) && definition.flow === 'implicit') {
           oauth.flows.implicit = { authorizationUrl: definition.authorizationUrl, scopes: definition.scopes || {} } as Swagger.OAuth2SecurityFlow3;
         }
 
@@ -113,6 +121,14 @@ export class SpecGenerator3 extends SpecGenerator {
       }
     });
     return defs;
+  }
+
+  private hasOAuthFlow(definition: any): definition is { flow: string } {
+    return !!definition.flow;
+  }
+
+  private hasOAuthFlows(definition: any): definition is { flows: Swagger.OAuthFlow } {
+    return !!definition.flows;
   }
 
   private buildServers() {
@@ -247,7 +263,7 @@ export class SpecGenerator3 extends SpecGenerator {
 
     pathMethod.parameters = method.parameters
       .filter(p => {
-        return ['body', 'formData', 'request', 'body-prop'].indexOf(p.in) === -1;
+        return ['body', 'formData', 'request', 'body-prop', 'res'].indexOf(p.in) === -1;
       })
       .map(p => this.buildParameter(p));
 
@@ -260,6 +276,8 @@ export class SpecGenerator3 extends SpecGenerator {
     } else if (bodyPropParams.length > 0) {
       pathMethod.requestBody = this.buildRequestBodyUsingBodyProps(controllerName, method);
     }
+
+    method.extensions.forEach(ext => (pathMethod[ext.key] = ext.value));
   }
 
   protected buildOperation(controllerName: string, method: Tsoa.Method): Swagger.Operation3 {
@@ -267,18 +285,21 @@ export class SpecGenerator3 extends SpecGenerator {
 
     method.responses.forEach((res: Tsoa.Response) => {
       swaggerResponses[res.name] = {
-        content: {
-          'application/json': {} as Swagger.Schema3,
-        },
         description: res.description,
       };
       if (res.schema && !isVoidType(res.schema)) {
-        /* tslint:disable:no-string-literal */
-        (swaggerResponses[res.name].content || {})['application/json']['schema'] = this.getSwaggerType(res.schema);
+        swaggerResponses[res.name].content = {
+          'application/json': {
+            schema: this.getSwaggerType(res.schema),
+          } as Swagger.Schema3,
+        };
       }
       if (res.examples) {
+        const examples = res.examples.reduce<Swagger.Example['examples']>((acc, ex, currentIndex) => {
+          return { ...acc, [`Example ${currentIndex + 1}`]: { value: ex } };
+        }, {});
         /* tslint:disable:no-string-literal */
-        (swaggerResponses[res.name].content || {})['application/json']['examples'] = { example: { value: res.examples } };
+        (swaggerResponses[res.name].content || {})['application/json']['examples'] = examples;
       }
     });
 
@@ -306,6 +327,20 @@ export class SpecGenerator3 extends SpecGenerator {
         ...validators,
       },
     };
+
+    const parameterExamples = parameter.example;
+    if (parameterExamples === undefined) {
+      mediaType.example = parameterExamples;
+    } else if (parameterExamples.length === 1) {
+      mediaType.example = parameterExamples[0];
+    } else {
+      mediaType.examples = {};
+      parameterExamples.forEach((example, index) =>
+        Object.assign(mediaType.examples, {
+          [`Example ${index + 1}`]: { value: example } as Swagger.Example3,
+        }),
+      );
+    }
 
     const requestBody: Swagger.RequestBody = {
       description: parameter.description,
@@ -350,7 +385,6 @@ export class SpecGenerator3 extends SpecGenerator {
   private buildParameter(source: Tsoa.Parameter): Swagger.Parameter {
     const parameter = {
       description: source.description,
-      example: source.example,
       in: source.in,
       name: source.name,
       required: source.required,
@@ -391,6 +425,20 @@ export class SpecGenerator3 extends SpecGenerator {
 
     parameter.schema = Object.assign({}, parameter.schema, validatorObjs);
 
+    const parameterExamples = source.example;
+    if (parameterExamples === undefined) {
+      parameter.example = parameterExamples;
+    } else if (parameterExamples.length === 1) {
+      parameter.example = parameterExamples[0];
+    } else {
+      parameter.examples = {};
+      parameterExamples.forEach((example, index) =>
+        Object.assign(parameter.examples, {
+          [`Example ${index + 1}`]: { value: example } as Swagger.Example3,
+        }),
+      );
+    }
+
     return parameter;
   }
 
@@ -423,6 +471,16 @@ export class SpecGenerator3 extends SpecGenerator {
 
   protected getSwaggerTypeForReferenceType(referenceType: Tsoa.ReferenceType): Swagger.BaseSchema {
     return { $ref: `#/components/schemas/${referenceType.refName}` };
+  }
+
+  protected getSwaggerTypeForPrimitiveType(dataType: Tsoa.PrimitiveTypeLiteral): Swagger.Schema {
+    if (dataType === 'any') {
+      // Setting additionalProperties causes issues with code generators for OpenAPI 3
+      // Therefore, we avoid setting it explicitly (since it's the implicit default already)
+      return {};
+    }
+
+    return super.getSwaggerTypeForPrimitiveType(dataType);
   }
 
   protected getSwaggerTypeForUnionType(type: Tsoa.UnionType) {

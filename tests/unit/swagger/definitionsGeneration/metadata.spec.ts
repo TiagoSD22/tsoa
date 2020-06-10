@@ -16,6 +16,14 @@ describe('Metadata generation', () => {
     });
   });
 
+  describe('InvalidExtensionControllerGenerator', () => {
+    it('should throw an Error when an attribute is not prefixed with "x-"', () => {
+      expect(() => {
+        new MetadataGenerator('./tests/fixtures/controllers/invalidExtensionController.ts').Generate();
+      }).to.throw('Extensions must begin with "x-" to be valid. Please see the following link for more information: https://swagger.io/docs/specification/openapi-extensions/');
+    });
+  });
+
   describe('DynamicControllerGenerator', () => {
     it("should should throw 'globs found 0 controllers.'", () => {
       expect(() => {
@@ -43,6 +51,7 @@ describe('Metadata generation', () => {
       'oauthOrAPIkeySecurity',
       'apiSecurity',
       'oauthSecurity',
+      'extension',
       'deprecatedMethod',
       'summaryMethod',
       'oauthAndAPIkeySecurity',
@@ -145,7 +154,7 @@ describe('Metadata generation', () => {
       const defaultResponse = method.responses[2];
       expect(defaultResponse.name).to.equal('default');
       expect(defaultResponse.description).to.equal('Unexpected error');
-      expect(defaultResponse.examples).to.deep.equal({ status: 500, message: 'Something went wrong!' });
+      expect(defaultResponse.examples).to.deep.equal([{ status: 500, message: 'Something went wrong!' }]);
 
       const successResponse = method.responses[3];
       expect(successResponse.name).to.equal('200');
@@ -182,7 +191,7 @@ describe('Metadata generation', () => {
 
       const security = method.security[0];
       expect(security).to.haveOwnProperty('JWT2');
-      expect(security['JWT2']).to.deep.equal(['permission:admin', 'permission:owner']);
+      expect(security.JWT2).to.deep.equal(['permission:admin', 'permission:owner']);
 
       const objSecurity = method.security[1];
       expect(objSecurity).to.deep.equal({
@@ -216,7 +225,6 @@ describe('Metadata generation', () => {
 
       const mainResponse = method.responses[0];
       expect(mainResponse.name).to.equal('204');
-      expect(mainResponse.description).to.equal('No content');
     });
 
     it('should generate api security', () => {
@@ -265,6 +273,25 @@ describe('Metadata generation', () => {
       expect(method.security[0].api_key).to.deep.equal([]);
     });
 
+    it('should generate all extensions', () => {
+      const method = controller.methods.find(m => m.name === 'extension');
+      if (!method) {
+        throw new Error('Method extension not defined!');
+      }
+      if (!method.extensions || method.extensions.length <= 0) {
+        throw new Error('No extension decorators defined!');
+      }
+
+      const expectedExtensions = [
+        { key: 'x-attKey', value: 'attValue' },
+        { key: 'x-attKey1', value: { test: 'testVal' } },
+        { key: 'x-attKey2', value: ['y0', 'y1'] },
+        { key: 'x-attKey3', value: [{ y0: 'yt0', y1: 'yt1' }, { y2: 'yt2' }] },
+      ];
+
+      expect(method.extensions).to.deep.equal(expectedExtensions);
+    });
+
     it('should generate deprecated method true', () => {
       const method = controller.methods.find(m => m.name === 'deprecatedMethod');
       if (!method) {
@@ -297,6 +324,41 @@ describe('Metadata generation', () => {
     const parameterMetadata = new MetadataGenerator('./tests/fixtures/controllers/parameterController.ts').Generate();
     const controller = parameterMetadata.controllers[0];
 
+    it('should generate single and multiple examples', () => {
+      const method = controller.methods.find(m => m.name === 'example');
+      if (!method) {
+        throw new Error('Method example not defined!');
+      }
+
+      expect(method.parameters.length).to.equal(4);
+
+      const firstnameParam = method.parameters[0];
+      expect(firstnameParam.example).not.to.be.undefined;
+      expect(firstnameParam.example).to.deep.equal(['name1', 'name2']);
+      expect((firstnameParam.example as unknown[]).length).to.be.equal(2);
+
+      const lastnameParam = method.parameters[1];
+      expect(lastnameParam.example).not.to.be.undefined;
+      expect(lastnameParam.example).to.deep.equal(['lastname']);
+      expect((lastnameParam.example as unknown[]).length).to.be.equal(1);
+
+      const genderParam = method.parameters[2];
+      expect(genderParam.example).not.to.be.undefined;
+      expect(genderParam.example).to.deep.equal([
+        { MALE: 'MALE', FEMALE: 'FEMALE' },
+        { MALE: 'MALE2', FEMALE: 'FEMALE2' },
+      ]);
+      expect((genderParam.example as unknown[]).length).to.be.equal(2);
+
+      const nicknamesParam = method.parameters[3];
+      expect(nicknamesParam.example).not.to.be.undefined;
+      expect(nicknamesParam.example).to.deep.equal([
+        ['name1', 'name2'],
+        ['name2_1', 'name2_2'],
+      ]);
+      expect((nicknamesParam.example as unknown[]).length).to.be.equal(2);
+    });
+
     it('should generate a query parameter', () => {
       const method = controller.methods.find(m => m.name === 'getQuery');
       if (!method) {
@@ -312,6 +374,7 @@ describe('Metadata generation', () => {
       expect(firstnameParam.description).to.equal('Firstname description');
       expect(firstnameParam.required).to.be.true;
       expect(firstnameParam.type.dataType).to.equal('string');
+      expect(firstnameParam.example).to.be.undefined;
 
       const lastnameParam = method.parameters[1];
       expect(lastnameParam.in).to.equal('query');
@@ -320,6 +383,9 @@ describe('Metadata generation', () => {
       expect(lastnameParam.description).to.equal('Lastname description');
       expect(lastnameParam.required).to.be.true;
       expect(lastnameParam.type.dataType).to.equal('string');
+      expect(lastnameParam.example).not.to.be.undefined;
+      expect(lastnameParam.example).to.deep.equal(['name1', 'name2']);
+      expect((lastnameParam.example as unknown[]).length).to.be.equal(2);
 
       const ageParam = method.parameters[2];
       expect(ageParam.in).to.equal('query');
@@ -328,6 +394,7 @@ describe('Metadata generation', () => {
       expect(ageParam.description).to.equal('Age description');
       expect(ageParam.required).to.be.true;
       expect(ageParam.type.dataType).to.equal('integer');
+      expect(ageParam.example).to.be.undefined;
 
       const weightParam = method.parameters[3];
       expect(weightParam.in).to.equal('query');
@@ -336,6 +403,7 @@ describe('Metadata generation', () => {
       expect(weightParam.description).to.equal('Weight description');
       expect(weightParam.required).to.be.true;
       expect(weightParam.type.dataType).to.equal('float');
+      expect(weightParam.example).to.be.undefined;
 
       const humanParam = method.parameters[4];
       expect(humanParam.in).to.equal('query');
@@ -344,6 +412,7 @@ describe('Metadata generation', () => {
       expect(humanParam.description).to.equal('Human description');
       expect(humanParam.required).to.be.true;
       expect(humanParam.type.dataType).to.equal('boolean');
+      expect(humanParam.example).to.be.undefined;
 
       const genderParam = method.parameters[5];
       expect(genderParam.in).to.equal('query');
@@ -352,6 +421,7 @@ describe('Metadata generation', () => {
       expect(genderParam.description).to.equal('Gender description');
       expect(genderParam.required).to.be.true;
       expect(genderParam.type.dataType).to.equal('refEnum');
+      expect(genderParam.example).to.be.undefined;
 
       const nicknamesParam = method.parameters[6] as Tsoa.ArrayParameter;
       expect(nicknamesParam.in).to.equal('query');
@@ -362,6 +432,7 @@ describe('Metadata generation', () => {
       expect(nicknamesParam.type.dataType).to.equal('array');
       expect(nicknamesParam.collectionFormat).to.equal('multi');
       expect(nicknamesParam.type.elementType).to.deep.equal({ dataType: 'string' });
+      expect(nicknamesParam.example).to.be.undefined;
     });
 
     it('should generate an path parameter', () => {
@@ -387,6 +458,9 @@ describe('Metadata generation', () => {
       expect(lastnameParam.description).to.equal('Lastname description');
       expect(lastnameParam.required).to.be.true;
       expect(lastnameParam.type.dataType).to.equal('string');
+      expect(lastnameParam.example).not.to.be.undefined;
+      expect(lastnameParam.example).to.deep.equal(['name1', 'name2']);
+      expect((lastnameParam.example as unknown[]).length).to.be.equal(2);
 
       const ageParam = method.parameters[2];
       expect(ageParam.in).to.equal('path');
@@ -501,6 +575,9 @@ describe('Metadata generation', () => {
       expect(lastnameParam.description).to.equal('Lastname description');
       expect(lastnameParam.required).to.be.true;
       expect(lastnameParam.type.dataType).to.equal('string');
+      expect(lastnameParam.example).not.to.be.undefined;
+      expect(lastnameParam.example).to.deep.equal(['name1', 'name2']);
+      expect((lastnameParam.example as unknown[]).length).to.be.equal(2);
 
       const ageParam = method.parameters[2];
       expect(ageParam.in).to.equal('header');
@@ -570,6 +647,20 @@ describe('Metadata generation', () => {
       expect(parameter.name).to.equal('body');
       expect(parameter.parameterName).to.equal('body');
       expect(parameter.required).to.be.true;
+      expect(parameter.example).not.to.be.undefined;
+      expect(parameter.example).to.deep.equal([
+        {
+          firstname: 'first1',
+          lastname: 'last1',
+          age: 1,
+        },
+        {
+          firstname: 'first2',
+          lastname: 'last2',
+          age: 2,
+        },
+      ]);
+      expect((parameter.example as unknown[]).length).to.be.equal(2);
     });
 
     it('should generate an body props parameter', () => {
@@ -588,6 +679,31 @@ describe('Metadata generation', () => {
       expect(parameter.name).to.equal('firstname');
       expect(parameter.parameterName).to.equal('firstname');
       expect(parameter.required).to.be.true;
+      expect(parameter.example).not.to.be.undefined;
+      expect(parameter.example).to.deep.equal(['name1', 'name2']);
+      expect((parameter.example as unknown[]).length).to.be.equal(2);
+    });
+
+    it('should generate a res parameter and the corresponding additional response', () => {
+      const method = controller.methods.find(m => m.name === 'getRes');
+      if (!method) {
+        throw new Error('Method getRes not defined!');
+      }
+      const parameter = method.parameters.find(param => param.parameterName === 'res');
+      if (!parameter) {
+        throw new Error('Parameter firstname not defined!');
+      }
+      const additionalResponse = method.responses[1];
+
+      expect(method.parameters.length).to.equal(1);
+      expect(parameter.description).to.equal('The alternate response');
+      expect(parameter.in).to.equal('res');
+      expect(parameter.name).to.equal('400');
+      expect(parameter.parameterName).to.equal('res');
+      expect(parameter.required).to.be.true;
+
+      expect(additionalResponse.description).to.equal('The alternate response');
+      expect(additionalResponse.name).to.equal('400');
     });
 
     it('Should inline enums for TS Enums in path, query and header when using Swagger', () => {
@@ -637,6 +753,28 @@ describe('Metadata generation', () => {
       expect(method.path).to.equal('hiddenGetMethod');
       expect(method.isHidden).to.equal(true);
     });
+
+    it('should mark query params as hidden', () => {
+      const method = controller.methods.find(m => m.name === 'hiddenQueryMethod');
+      if (!method) {
+        throw new Error('Method hiddenQueryMethod not defined!');
+      }
+
+      const defaultSecret = method.parameters.find(p => p.name === 'defaultSecret');
+      expect(defaultSecret).to.be.undefined;
+
+      const optionalSecret = method.parameters.find(p => p.name === 'optionalSecret');
+      expect(optionalSecret).to.be.undefined;
+
+      expect(method.parameters.length).to.equal(1);
+
+      const normalParam = method.parameters[0];
+      expect(normalParam.in).to.equal('query');
+      expect(normalParam.name).to.equal('normalParam');
+      expect(normalParam.parameterName).to.equal('normalParam');
+      expect(normalParam.required).to.be.true;
+      expect(normalParam.type.dataType).to.equal('string');
+    });
   });
 
   describe('HiddenControllerGenerator', () => {
@@ -647,6 +785,26 @@ describe('Metadata generation', () => {
       expect(controller.methods).to.have.lengthOf(2);
       controller.methods.forEach(method => {
         expect(method.isHidden).to.equal(true);
+      });
+    });
+  });
+
+  describe('ControllerWithCommonResponsesGenerator', () => {
+    const parameterMetadata = new MetadataGenerator('./tests/fixtures/controllers/controllerWithCommonResponses.ts').Generate();
+    const controller = parameterMetadata.controllers[0];
+
+    it('should add common responses to every method', () => {
+      expect(controller.methods).to.have.lengthOf(2);
+      controller.methods.forEach(method => {
+        expect(method.responses.length).to.equal(2);
+
+        let response = method.responses[0];
+        expect(response.name).to.equal('401');
+        expect(response.description).to.equal('Unauthorized');
+
+        response = method.responses[1];
+        expect(response.name).to.equal('200');
+        expect(response.description).to.equal('Ok');
       });
     });
   });
