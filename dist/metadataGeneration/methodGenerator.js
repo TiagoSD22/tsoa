@@ -31,13 +31,15 @@ Object.defineProperty(exports, '__esModule', { value: true });
 var isVoidType_1 = require('../utils/isVoidType');
 var decoratorUtils_1 = require('./../utils/decoratorUtils');
 var jsDocUtils_1 = require('./../utils/jsDocUtils');
+var extension_1 = require('./extension');
 var exceptions_1 = require('./exceptions');
 var parameterGenerator_1 = require('./parameterGenerator');
 var typeResolver_1 = require('./typeResolver');
 var MethodGenerator = /** @class */ (function () {
-  function MethodGenerator(node, current, parentTags, parentSecurity, isParentHidden) {
+  function MethodGenerator(node, current, commonResponses, parentTags, parentSecurity, isParentHidden) {
     this.node = node;
     this.current = current;
+    this.commonResponses = commonResponses;
     this.parentTags = parentTags;
     this.parentSecurity = parentSecurity;
     this.isParentHidden = isParentHidden;
@@ -58,16 +60,22 @@ var MethodGenerator = /** @class */ (function () {
       nodeType = typeChecker.typeToTypeNode(implicitType);
     }
     var type = new typeResolver_1.TypeResolver(nodeType, this.current).resolve();
-    var responses = this.getMethodResponses();
+    var responses = this.commonResponses.concat(this.getMethodResponses());
     responses.push(this.getMethodSuccessResponse(type));
+    var parameters = this.buildParameters();
+    var additionalResponses = parameters.filter(function (p) {
+      return p.in === 'res';
+    });
+    responses.push.apply(responses, __spread(additionalResponses));
     return {
+      extensions: this.getExtensions(),
       deprecated: this.getIsDeprecated(),
       description: jsDocUtils_1.getJSDocDescription(this.node),
       isHidden: this.getIsHidden(),
       method: this.method,
       name: this.node.name.text,
       operationId: this.getOperationId(),
-      parameters: this.buildParameters(),
+      parameters: parameters,
       path: this.path,
       responses: responses,
       security: this.getSecurity(),
@@ -78,15 +86,19 @@ var MethodGenerator = /** @class */ (function () {
   };
   MethodGenerator.prototype.buildParameters = function () {
     var _this = this;
-    var parameters = this.node.parameters.map(function (p) {
-      try {
-        return new parameterGenerator_1.ParameterGenerator(p, _this.method, _this.path, _this.current).Generate();
-      } catch (e) {
-        var methodId = _this.node.name;
-        var controllerId = _this.node.parent.name;
-        throw new exceptions_1.GenerateMetadataError(e.message + " \n in '" + controllerId.text + '.' + methodId.text + "'");
-      }
-    });
+    var parameters = this.node.parameters
+      .map(function (p) {
+        try {
+          return new parameterGenerator_1.ParameterGenerator(p, _this.method, _this.path, _this.current).Generate();
+        } catch (e) {
+          var methodId = _this.node.name;
+          var controllerId = _this.node.parent.name;
+          throw new exceptions_1.GenerateMetadataError(e.message + " \n in '" + controllerId.text + '.' + methodId.text + "'");
+        }
+      })
+      .filter(function (p) {
+        return p !== null;
+      });
     var bodyParameters = parameters.filter(function (p) {
       return p.in === 'body';
     });
@@ -100,6 +112,13 @@ var MethodGenerator = /** @class */ (function () {
       throw new exceptions_1.GenerateMetadataError("Choose either during @Body or @BodyProp in '" + this.getCurrentLocation() + "' method.");
     }
     return parameters;
+  };
+  MethodGenerator.prototype.getExtensions = function () {
+    var extensionDecorators = this.getDecoratorsByIdentifier(this.node, 'Extension');
+    if (!extensionDecorators || !extensionDecorators.length) {
+      return [];
+    }
+    return extension_1.getExtensions(extensionDecorators, this.current);
   };
   MethodGenerator.prototype.getCurrentLocation = function () {
     var methodId = this.node.name;
@@ -146,10 +165,10 @@ var MethodGenerator = /** @class */ (function () {
       var _a = __read(decoratorUtils_1.getDecoratorValues(decorator, _this.current.typeChecker), 3),
         name = _a[0],
         description = _a[1],
-        examples = _a[2];
+        example = _a[2];
       return {
         description: description || '',
-        examples: examples,
+        examples: example === undefined ? undefined : [example],
         name: name || '200',
         schema: expression.typeArguments && expression.typeArguments.length > 0 ? new typeResolver_1.TypeResolver(expression.typeArguments[0], _this.current).resolve() : undefined,
       };
@@ -180,15 +199,16 @@ var MethodGenerator = /** @class */ (function () {
     };
   };
   MethodGenerator.prototype.getMethodSuccessExamples = function () {
+    var _this = this;
     var exampleDecorators = this.getDecoratorsByIdentifier(this.node, 'Example');
     if (!exampleDecorators || !exampleDecorators.length) {
       return undefined;
     }
-    if (exampleDecorators.length > 1) {
-      throw new exceptions_1.GenerateMetadataError("Only one Example decorator allowed in '" + this.getCurrentLocation + "' method.");
-    }
-    var values = decoratorUtils_1.getDecoratorValues(exampleDecorators[0], this.current.typeChecker);
-    return values && values[0];
+    var examples = exampleDecorators.map(function (exampleDecorator) {
+      var _a;
+      return (_a = decoratorUtils_1.getDecoratorValues(exampleDecorator, _this.current.typeChecker)) === null || _a === void 0 ? void 0 : _a[0];
+    });
+    return examples || [];
   };
   MethodGenerator.prototype.supportsPathMethod = function (method) {
     return ['get', 'post', 'put', 'patch', 'delete', 'head'].some(function (m) {

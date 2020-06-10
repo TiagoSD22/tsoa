@@ -29,6 +29,30 @@ var MetadataGenerator = /** @class */ (function () {
     this.nodes = new Array();
     this.referenceTypeMap = {};
     this.circularDependencyResolvers = new Array();
+    this.checkForMethodSignatureDuplicates = function (controllers) {
+      var map = {};
+      controllers.forEach(function (controller) {
+        controller.methods.forEach(function (method) {
+          var signature = method.path ? '@' + method.method + '(' + controller.path + '/' + method.path + ')' : '@' + method.method + '(' + controller.path + ')';
+          var methodDescription = controller.name + '#' + method.name;
+          if (map[signature]) {
+            map[signature].push(methodDescription);
+          } else {
+            map[signature] = [methodDescription];
+          }
+        });
+      });
+      var message = '';
+      Object.keys(map).forEach(function (signature) {
+        var controllers = map[signature];
+        if (controllers.length > 1) {
+          message += 'Duplicate method signature ' + signature + ' found in controllers: ' + controllers.join(', ') + '\n';
+        }
+      });
+      if (message) {
+        throw new exceptions_1.GenerateMetadataError(message);
+      }
+    };
     typeResolver_1.TypeResolver.clearCache();
     this.program = !!controllers ? this.setProgramToDynamicControllersFiles(controllers) : ts.createProgram([entryFile], compilerOptions || {});
     this.typeChecker = this.program.getTypeChecker();
@@ -40,6 +64,7 @@ var MetadataGenerator = /** @class */ (function () {
     var _this = this;
     this.extractNodeFromProgramSourceFiles();
     var controllers = this.buildControllers();
+    this.checkForMethodSignatureDuplicates(controllers);
     this.circularDependencyResolvers.forEach(function (c) {
       return c(_this.referenceTypeMap);
     });
@@ -78,6 +103,26 @@ var MetadataGenerator = /** @class */ (function () {
         }
       }
       ts.forEachChild(sf, function (node) {
+        /**
+         * If we declare a namespace within a module, like we do in `tsoaTestModule.d.ts`,
+         * we need to explicitly get the children of the module declaration
+         * (`declare module 'tsoaTest'`) - which are the moduleBlock statements,
+         * because otherwise our type resolver cannot iterate over namespaces defined in that module.
+         */
+        if (ts.isModuleDeclaration(node)) {
+          /**
+           * For some reason unknown to me, TS resolves both `declare module` and `namespace` to
+           * the same kind (`ModuleDeclaration`). In order to figure out whether it's one or the other,
+           * we check the node flags. They tell us whether it is a namespace or not.
+           */
+          // tslint:disable-next-line:no-bitwise
+          if ((node.flags & ts.NodeFlags.Namespace) === 0 && node.body && ts.isModuleBlock(node.body)) {
+            node.body.statements.forEach(function (statement) {
+              _this.nodes.push(statement);
+            });
+            return;
+          }
+        }
         _this.nodes.push(node);
       });
     });

@@ -11,6 +11,7 @@ __export(require('./decorators/tags'));
 __export(require('./decorators/operationid'));
 __export(require('./decorators/route'));
 __export(require('./decorators/security'));
+__export(require('./decorators/extension'));
 __export(require('./interfaces/controller'));
 __export(require('./decorators/response'));
 __export(require('./routeGeneration/templateHelpers'));

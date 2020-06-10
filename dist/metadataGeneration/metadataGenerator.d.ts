@@ -13,6 +13,7 @@ export declare class MetadataGenerator {
   Generate(): Tsoa.Metadata;
   private setProgramToDynamicControllersFiles;
   private extractNodeFromProgramSourceFiles;
+  private checkForMethodSignatureDuplicates;
   TypeChecker(): ts.TypeChecker;
   AddReferenceType(referenceType: Tsoa.ReferenceType): void;
   GetReferenceType(refName: string): Tsoa.ReferenceType;

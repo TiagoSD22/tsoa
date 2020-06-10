@@ -7,8 +7,9 @@ export declare class ParameterGenerator {
   private readonly path;
   private readonly current;
   constructor(parameter: ts.ParameterDeclaration, method: string, path: string, current: MetadataGenerator);
-  Generate(): Tsoa.Parameter;
+  Generate(): Tsoa.Parameter | null;
   private getRequestParameter;
+  private getResParameter;
   private getBodyPropParameter;
   private getBodyParameter;
   private getHeaderParameter;
@@ -20,4 +21,5 @@ export declare class ParameterGenerator {
   private supportParameterDecorator;
   private supportPathDataType;
   private getValidatedType;
+  private getQueryParamterIsHidden;
 }

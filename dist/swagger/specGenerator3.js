@@ -44,7 +44,6 @@ var specGenerator_1 = require('./specGenerator');
 /**
  * TODO:
  * Handle formData parameters
- * Handle tags
  * Handle requestBodies of type other than json
  * Handle requestBodies as reusable objects
  * Handle headers, examples, responses, etc.
@@ -66,12 +65,16 @@ var SpecGenerator3 = /** @class */ (function (_super) {
       openapi: '3.0.0',
       paths: this.buildPaths(),
       servers: this.buildServers(),
+      tags: this.config.tags,
     };
     if (this.config.spec) {
       this.config.specMerging = this.config.specMerging || 'immediate';
       var mergeFuncs = {
         immediate: Object.assign,
         recursive: require('merge').recursive,
+        deepmerge: function (spec, merge) {
+          return require('deepmerge').all([spec, merge]);
+        },
       };
       spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
     }
@@ -89,6 +92,9 @@ var SpecGenerator3 = /** @class */ (function (_super) {
     }
     if (this.config.license) {
       info.license = { name: this.config.license };
+    }
+    if (this.config.contact) {
+      info.contact = this.config.contact;
     }
     return info;
   };
@@ -108,6 +114,7 @@ var SpecGenerator3 = /** @class */ (function (_super) {
     return components;
   };
   SpecGenerator3.prototype.translateSecurityDefinitions = function (definitions) {
+    var _this = this;
     var defs = {};
     Object.keys(definitions).forEach(function (key) {
       if (definitions[key].type === 'basic') {
@@ -120,15 +127,15 @@ var SpecGenerator3 = /** @class */ (function (_super) {
         var oauth = defs[key] || {
           type: 'oauth2',
           description: definitions[key].description,
-          flows: definition.flows || {},
+          flows: (_this.hasOAuthFlows(definition) && definition.flows) || {},
         };
-        if (definition.flow === 'password') {
+        if (_this.hasOAuthFlow(definition) && definition.flow === 'password') {
           oauth.flows.password = { tokenUrl: definition.tokenUrl, scopes: definition.scopes || {} };
-        } else if (definition.flow === 'accessCode') {
+        } else if (_this.hasOAuthFlow(definition) && definition.flow === 'accessCode') {
           oauth.flows.authorizationCode = { tokenUrl: definition.tokenUrl, authorizationUrl: definition.authorizationUrl, scopes: definition.scopes || {} };
-        } else if (definition.flow === 'application') {
+        } else if (_this.hasOAuthFlow(definition) && definition.flow === 'application') {
           oauth.flows.clientCredentials = { tokenUrl: definition.tokenUrl, scopes: definition.scopes || {} };
-        } else if (definition.flow === 'implicit') {
+        } else if (_this.hasOAuthFlow(definition) && definition.flow === 'implicit') {
           oauth.flows.implicit = { authorizationUrl: definition.authorizationUrl, scopes: definition.scopes || {} };
         }
         defs[key] = oauth;
@@ -137,6 +144,12 @@ var SpecGenerator3 = /** @class */ (function (_super) {
       }
     });
     return defs;
+  };
+  SpecGenerator3.prototype.hasOAuthFlow = function (definition) {
+    return !!definition.flow;
+  };
+  SpecGenerator3.prototype.hasOAuthFlows = function (definition) {
+    return !!definition.flows;
   };
   SpecGenerator3.prototype.buildServers = function () {
     var basePath = pathUtils_1.normalisePath(this.config.basePath, '/', undefined, false);
@@ -272,7 +285,7 @@ var SpecGenerator3 = /** @class */ (function (_super) {
     });
     pathMethod.parameters = method.parameters
       .filter(function (p) {
-        return ['body', 'formData', 'request', 'body-prop'].indexOf(p.in) === -1;
+        return ['body', 'formData', 'request', 'body-prop', 'res'].indexOf(p.in) === -1;
       })
       .map(function (p) {
         return _this.buildParameter(p);
@@ -285,24 +298,31 @@ var SpecGenerator3 = /** @class */ (function (_super) {
     } else if (bodyPropParams.length > 0) {
       pathMethod.requestBody = this.buildRequestBodyUsingBodyProps(controllerName, method);
     }
+    method.extensions.forEach(function (ext) {
+      return (pathMethod[ext.key] = ext.value);
+    });
   };
   SpecGenerator3.prototype.buildOperation = function (controllerName, method) {
     var _this = this;
     var swaggerResponses = {};
     method.responses.forEach(function (res) {
       swaggerResponses[res.name] = {
-        content: {
-          'application/json': {},
-        },
         description: res.description,
       };
       if (res.schema && !isVoidType_1.isVoidType(res.schema)) {
-        /* tslint:disable:no-string-literal */
-        (swaggerResponses[res.name].content || {})['application/json']['schema'] = _this.getSwaggerType(res.schema);
+        swaggerResponses[res.name].content = {
+          'application/json': {
+            schema: _this.getSwaggerType(res.schema),
+          },
+        };
       }
       if (res.examples) {
+        var examples = res.examples.reduce(function (acc, ex, currentIndex) {
+          var _a;
+          return __assign(__assign({}, acc), ((_a = {}), (_a['Example ' + (currentIndex + 1)] = { value: ex }), _a));
+        }, {});
         /* tslint:disable:no-string-literal */
-        (swaggerResponses[res.name].content || {})['application/json']['examples'] = { example: { value: res.examples } };
+        (swaggerResponses[res.name].content || {})['application/json']['examples'] = examples;
       }
     });
     return {
@@ -322,6 +342,18 @@ var SpecGenerator3 = /** @class */ (function (_super) {
     var mediaType = {
       schema: __assign(__assign({}, this.getSwaggerType(parameter.type)), validators),
     };
+    var parameterExamples = parameter.example;
+    if (parameterExamples === undefined) {
+      mediaType.example = parameterExamples;
+    } else if (parameterExamples.length === 1) {
+      mediaType.example = parameterExamples[0];
+    } else {
+      mediaType.examples = {};
+      parameterExamples.forEach(function (example, index) {
+        var _a;
+        return Object.assign(mediaType.examples, ((_a = {}), (_a['Example ' + (index + 1)] = { value: example }), _a));
+      });
+    }
     var requestBody = {
       description: parameter.description,
       required: parameter.required,
@@ -361,7 +393,6 @@ var SpecGenerator3 = /** @class */ (function (_super) {
   SpecGenerator3.prototype.buildParameter = function (source) {
     var parameter = {
       description: source.description,
-      example: source.example,
       in: source.in,
       name: source.name,
       required: source.required,
@@ -396,6 +427,18 @@ var SpecGenerator3 = /** @class */ (function (_super) {
       parameter.schema.enum = parameterType.enum;
     }
     parameter.schema = Object.assign({}, parameter.schema, validatorObjs);
+    var parameterExamples = source.example;
+    if (parameterExamples === undefined) {
+      parameter.example = parameterExamples;
+    } else if (parameterExamples.length === 1) {
+      parameter.example = parameterExamples[0];
+    } else {
+      parameter.examples = {};
+      parameterExamples.forEach(function (example, index) {
+        var _a;
+        return Object.assign(parameter.examples, ((_a = {}), (_a['Example ' + (index + 1)] = { value: example }), _a));
+      });
+    }
     return parameter;
   };
   SpecGenerator3.prototype.buildProperties = function (source) {
@@ -423,6 +466,14 @@ var SpecGenerator3 = /** @class */ (function (_super) {
   };
   SpecGenerator3.prototype.getSwaggerTypeForReferenceType = function (referenceType) {
     return { $ref: '#/components/schemas/' + referenceType.refName };
+  };
+  SpecGenerator3.prototype.getSwaggerTypeForPrimitiveType = function (dataType) {
+    if (dataType === 'any') {
+      // Setting additionalProperties causes issues with code generators for OpenAPI 3
+      // Therefore, we avoid setting it explicitly (since it's the implicit default already)
+      return {};
+    }
+    return _super.prototype.getSwaggerTypeForPrimitiveType.call(this, dataType);
   };
   SpecGenerator3.prototype.getSwaggerTypeForUnionType = function (type) {
     var _this = this;

@@ -1,6 +1,7 @@
 'use strict';
 Object.defineProperty(exports, '__esModule', { value: true });
 var ts = require('typescript');
+var exceptions_1 = require('../metadataGeneration/exceptions');
 function getJSDocDescription(node) {
   var jsDocs = node.jsDoc;
   if (!jsDocs || !jsDocs.length) {
@@ -19,16 +20,24 @@ function getJSDocComment(node, tagName) {
   return tags[0].comment;
 }
 exports.getJSDocComment = getJSDocComment;
-function getJSDocTagNames(node) {
+function getJSDocTagNames(node, requireTagName) {
+  if (requireTagName === void 0) {
+    requireTagName = false;
+  }
   var tags;
   if (node.kind === ts.SyntaxKind.Parameter) {
     var parameterName_1 = node.name.text;
     tags = getJSDocTags(node.parent, function (tag) {
-      return tag.comment !== undefined && tag.comment.startsWith(parameterName_1);
+      if (ts.isJSDocParameterTag(tag)) {
+        return false;
+      } else if (tag.comment === undefined) {
+        throw new exceptions_1.GenerateMetadataError('Orphan tag: @' + (tag.tagName.text || tag.tagName.escapedText) + ' should have a parameter name follows with.');
+      }
+      return tag.comment.startsWith(parameterName_1);
     });
   } else {
     tags = getJSDocTags(node, function (tag) {
-      return tag.comment !== undefined;
+      return requireTagName ? tag.comment !== undefined : true;
     });
   }
   return tags.map(function (tag) {

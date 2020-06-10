@@ -1,9 +1,32 @@
 'use strict';
+var __read =
+  (this && this.__read) ||
+  function (o, n) {
+    var m = typeof Symbol === 'function' && o[Symbol.iterator];
+    if (!m) return o;
+    var i = m.call(o),
+      r,
+      ar = [],
+      e;
+    try {
+      while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+    } catch (error) {
+      e = { error: error };
+    } finally {
+      try {
+        if (r && !r.done && (m = i['return'])) m.call(i);
+      } finally {
+        if (e) throw e.error;
+      }
+    }
+    return ar;
+  };
 Object.defineProperty(exports, '__esModule', { value: true });
 var ts = require('typescript');
 var decoratorUtils_1 = require('./../utils/decoratorUtils');
 var exceptions_1 = require('./exceptions');
 var methodGenerator_1 = require('./methodGenerator');
+var typeResolver_1 = require('./typeResolver');
 var ControllerGenerator = /** @class */ (function () {
   function ControllerGenerator(node, current) {
     this.node = node;
@@ -12,6 +35,7 @@ var ControllerGenerator = /** @class */ (function () {
     this.tags = this.getTags();
     this.security = this.getSecurity();
     this.isHidden = this.getIsHidden();
+    this.commonResponses = this.getCommonResponses();
   }
   ControllerGenerator.prototype.IsValid = function () {
     return !!this.path || this.path === '';
@@ -38,7 +62,7 @@ var ControllerGenerator = /** @class */ (function () {
         return m.kind === ts.SyntaxKind.MethodDeclaration;
       })
       .map(function (m) {
-        return new methodGenerator_1.MethodGenerator(m, _this.current, _this.tags, _this.security, _this.isHidden);
+        return new methodGenerator_1.MethodGenerator(m, _this.current, _this.commonResponses, _this.tags, _this.security, _this.isHidden);
       })
       .filter(function (generator) {
         return generator.IsValid();
@@ -61,6 +85,31 @@ var ControllerGenerator = /** @class */ (function () {
     var expression = decorator.parent;
     var decoratorArgument = expression.arguments[0];
     return decoratorArgument ? '' + decoratorArgument.text : '';
+  };
+  ControllerGenerator.prototype.getCommonResponses = function () {
+    var _this = this;
+    var decorators = decoratorUtils_1.getDecorators(this.node, function (identifier) {
+      return identifier.text === 'Response';
+    });
+    if (!decorators || !decorators.length) {
+      return [];
+    }
+    return decorators.map(function (decorator) {
+      var expression = decorator.parent;
+      var _a = __read(decoratorUtils_1.getDecoratorValues(decorator, _this.current.typeChecker), 3),
+        name = _a[0],
+        description = _a[1],
+        example = _a[2];
+      if (!name) {
+        throw new exceptions_1.GenerateMetadataError("Controller's responses should have an explicit name.");
+      }
+      return {
+        description: description || '',
+        examples: example === undefined ? undefined : [example],
+        name: name,
+        schema: expression.typeArguments && expression.typeArguments.length > 0 ? new typeResolver_1.TypeResolver(expression.typeArguments[0], _this.current).resolve() : undefined,
+      };
+    });
   };
   ControllerGenerator.prototype.getTags = function () {
     var decorators = decoratorUtils_1.getDecorators(this.node, function (identifier) {

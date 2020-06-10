@@ -45,7 +45,7 @@ export declare namespace Swagger {
       [name: string]: any;
     };
     examples?: {
-      [name: string]: any;
+      [name: string]: Example3 | string;
     };
     headers?: {
       [name: string]: any;
@@ -99,7 +99,14 @@ export declare namespace Swagger {
     externalDocs?: ExternalDocs;
   }
   export interface Example {
-    [name: string]: any;
+    examples?: {
+      [exampleName: string]: Swagger.Example3;
+    };
+  }
+  export interface Example3 {
+    value: unknown;
+    summary?: string;
+    description?: string;
   }
   export interface BaseParameter extends BaseSchema {
     name: string;
@@ -107,6 +114,9 @@ export declare namespace Swagger {
     required?: boolean;
     description?: string;
     example?: unknown;
+    examples?: {
+      [name: string]: Example3 | string;
+    };
     schema: Schema;
     type: DataType;
     format?: DataFormat;
@@ -167,6 +177,7 @@ export declare namespace Swagger {
     schemes?: Protocol[];
     deprecated?: boolean;
     security?: Security[];
+    [key: string]: unknown;
   }
   export interface Operation3 {
     tags?: string[];
@@ -193,11 +204,9 @@ export declare namespace Swagger {
   }
   export interface MediaType {
     schema?: Schema3;
-    example?: {
-      [name: string]: any;
-    };
+    example?: unknown;
     examples?: {
-      [name: string]: any;
+      [name: string]: Example3 | string;
     };
     encoding?: {
       [name: string]: any;
@@ -209,14 +218,12 @@ export declare namespace Swagger {
     headers?: {
       [name: string]: Header;
     };
-    examples?: {
-      [name: string]: Example;
-    };
+    examples?: Example;
   }
   export interface Response3 {
     description: string;
     content?: {
-      [name: string]: Schema | Example;
+      [name: string]: Schema & Example;
     };
     headers?: {
       [name: string]: Header;

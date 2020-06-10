@@ -646,6 +646,7 @@ var TypeResolver = /** @class */ (function () {
   TypeResolver.prototype.resolveModelTypeScope = function (leftmost, statements) {
     var _this = this;
     var _loop_1 = function () {
+      var _a;
       var leftmostName = leftmost.kind === ts.SyntaxKind.Identifier ? leftmost.text : leftmost.right.text;
       var moduleDeclarations = statements.filter(function (node) {
         if ((node.kind !== ts.SyntaxKind.ModuleDeclaration || !_this.current.IsExportedNode(node)) && !ts.isEnumDeclaration(node)) {
@@ -657,18 +658,21 @@ var TypeResolver = /** @class */ (function () {
       if (!moduleDeclarations.length) {
         throw new exceptions_1.GenerateMetadataError('No matching module declarations found for ' + leftmostName + '.');
       }
-      if (moduleDeclarations.length > 1) {
-        throw new exceptions_1.GenerateMetadataError('Multiple matching module declarations found for ' + leftmostName + '; please make module declarations unique.');
-      }
-      if (ts.isEnumDeclaration(moduleDeclarations[0])) {
-        statements = moduleDeclarations[0].members;
-      } else {
-        var moduleBlock = moduleDeclarations[0].body;
-        if (moduleBlock === null || moduleBlock.kind !== ts.SyntaxKind.ModuleBlock) {
-          throw new exceptions_1.GenerateMetadataError('Module declaration found for ' + leftmostName + ' has no body.');
-        }
-        statements = moduleBlock.statements;
-      }
+      statements = (_a = Array.prototype).concat.apply(
+        _a,
+        __spread(
+          moduleDeclarations.map(function (declaration) {
+            if (ts.isEnumDeclaration(declaration)) {
+              return declaration.members;
+            } else {
+              if (!declaration.body || !ts.isModuleBlock(declaration.body)) {
+                throw new exceptions_1.GenerateMetadataError('Module declaration found for ' + leftmostName + ' has no body.');
+              }
+              return declaration.body.statements;
+            }
+          }),
+        ),
+      );
       leftmost = leftmost.parent;
     };
     while (leftmost.parent && leftmost.parent.kind === ts.SyntaxKind.QualifiedName) {

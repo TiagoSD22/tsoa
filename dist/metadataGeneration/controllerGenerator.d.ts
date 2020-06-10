@@ -8,11 +8,13 @@ export declare class ControllerGenerator {
   private readonly tags?;
   private readonly security?;
   private readonly isHidden?;
+  private readonly commonResponses;
   constructor(node: ts.ClassDeclaration, current: MetadataGenerator);
   IsValid(): boolean;
   Generate(): Tsoa.Controller;
   private buildMethods;
   private getPath;
+  private getCommonResponses;
   private getTags;
   private getSecurity;
   private getIsHidden;

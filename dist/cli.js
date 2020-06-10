@@ -187,6 +187,7 @@ var determineNoImplicitAdditionalSetting = function (noImplicitAdditionalPropert
     return 'ignore';
   }
 };
+var authorInformation = getPackageJsonValue('author', 'unknown');
 var getConfig = function (configPath) {
   if (configPath === void 0) {
     configPath = 'tsoa.json';
@@ -234,20 +235,23 @@ var validateCompilerOptions = function (config) {
 };
 exports.validateSpecConfig = function (config) {
   return __awaiter(void 0, void 0, void 0, function () {
-    var _a, _b, noImplicitAdditionalProperties, _c, _d, _e, _f, _g, _h;
+    var _a, _b, noImplicitAdditionalProperties, _c, _d, _e, _f, _g, _h, contact;
     return __generator(this, function (_j) {
       switch (_j.label) {
         case 0:
+          if (!config.spec) {
+            throw new Error('Missing spec: configuration must contain spec. Spec used to be called swagger in previous versions of tsoa.');
+          }
           if (!config.spec.outputDirectory) {
             throw new Error('Missing outputDirectory: configuration must contain output directory.');
           }
           if (!config.entryFile) {
-            throw new Error('Missing entryFile: Configuration must contain an entry point file.');
+            throw new Error('Missing entryFile: configuration must contain an entry point file.');
           }
           return [4 /*yield*/, fs_1.fsExists(config.entryFile)];
         case 1:
           if (!_j.sent()) {
-            throw new Error('EntryFile not found: ' + config.entryFile + ' - Please check your tsoa config.');
+            throw new Error('EntryFile not found: ' + config.entryFile + ' - please check your tsoa config.');
           }
           _a = config.spec;
           _b = config.spec.version;
@@ -261,6 +265,9 @@ exports.validateSpecConfig = function (config) {
           config.spec.specVersion = config.spec.specVersion || 2;
           if (config.spec.specVersion !== 2 && config.spec.specVersion !== 3) {
             throw new Error('Unsupported Spec version.');
+          }
+          if (config.spec.spec && !['immediate', 'recursive', 'deepmerge', undefined].includes(config.spec.specMerging)) {
+            throw new Error('Invalid specMerging config: ' + config.spec.specMerging);
           }
           noImplicitAdditionalProperties = determineNoImplicitAdditionalSetting(config.noImplicitAdditionalProperties);
           _c = config.spec;
@@ -291,6 +298,15 @@ exports.validateSpecConfig = function (config) {
         case 9:
           _g.license = _h;
           config.spec.basePath = config.spec.basePath || '/';
+          if (!config.spec.contact) {
+            config.spec.contact = {};
+          }
+          return [4 /*yield*/, authorInformation];
+        case 10:
+          contact = _j.sent().match(/^([^<(]*)?\s*(?:<([^>(]*)>)?\s*(?:\(([^)]*)\)|$)/m);
+          config.spec.contact.name = config.spec.contact.name || (contact === null || contact === void 0 ? void 0 : contact[1]);
+          config.spec.contact.email = config.spec.contact.email || (contact === null || contact === void 0 ? void 0 : contact[2]);
+          config.spec.contact.url = config.spec.contact.url || (contact === null || contact === void 0 ? void 0 : contact[3]);
           return [
             2 /*return*/,
             __assign(__assign({}, config.spec), { noImplicitAdditionalProperties: noImplicitAdditionalProperties, entryFile: config.entryFile, controllerPathGlobs: config.controllerPathGlobs }),

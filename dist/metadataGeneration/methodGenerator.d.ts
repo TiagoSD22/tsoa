@@ -4,15 +4,24 @@ import { Tsoa } from './tsoa';
 export declare class MethodGenerator {
   private readonly node;
   private readonly current;
+  private readonly commonResponses;
   private readonly parentTags?;
   private readonly parentSecurity?;
   private readonly isParentHidden?;
   private method;
   private path;
-  constructor(node: ts.MethodDeclaration, current: MetadataGenerator, parentTags?: string[] | undefined, parentSecurity?: Tsoa.Security[] | undefined, isParentHidden?: boolean | undefined);
+  constructor(
+    node: ts.MethodDeclaration,
+    current: MetadataGenerator,
+    commonResponses: Tsoa.Response[],
+    parentTags?: string[] | undefined,
+    parentSecurity?: Tsoa.Security[] | undefined,
+    isParentHidden?: boolean | undefined,
+  );
   IsValid(): boolean;
   Generate(): Tsoa.Method;
   private buildParameters;
+  private getExtensions;
   private getCurrentLocation;
   private processMethodDecorators;
   private getMethodResponses;

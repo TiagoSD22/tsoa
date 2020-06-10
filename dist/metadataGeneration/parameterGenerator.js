@@ -46,6 +46,8 @@ var ParameterGenerator = /** @class */ (function () {
         return this.getQueryParameter(this.parameter);
       case 'Path':
         return this.getPathParameter(this.parameter);
+      case 'Res':
+        return this.getResParameter(this.parameter);
       default:
         return this.getPathParameter(this.parameter);
     }
@@ -60,6 +62,45 @@ var ParameterGenerator = /** @class */ (function () {
       required: !parameter.questionToken && !parameter.initializer,
       type: { dataType: 'object' },
       validators: validatorUtils_1.getParameterValidators(this.parameter, parameterName),
+    };
+  };
+  ParameterGenerator.prototype.getResParameter = function (parameter) {
+    var parameterName = parameter.name.text;
+    var decorator =
+      decoratorUtils_1.getNodeFirstDecoratorValue(this.parameter, this.current.typeChecker, function (ident) {
+        return ident.text === 'Res';
+      }) || parameterName;
+    if (!decorator) {
+      throw new exceptions_1.GenerateMetadataError('Could not find Decorator', parameter);
+    }
+    var typeNode = parameter.type;
+    if (!typeNode || !ts.isTypeReferenceNode(typeNode) || typeNode.typeName.getText() !== 'TsoaResponse') {
+      throw new exceptions_1.GenerateMetadataError('@Res() requires the type to be TsoaResponse<HTTPStatusCode, ResBody>', parameter);
+    }
+    if (!typeNode.typeArguments || !typeNode.typeArguments[0]) {
+      throw new exceptions_1.GenerateMetadataError('@Res() requires the type to be TsoaResponse<HTTPStatusCode, ResBody>', parameter);
+    }
+    var statusArgument = typeNode.typeArguments[0];
+    var statusArgumentType = this.current.typeChecker.getTypeAtLocation(statusArgument);
+    var isNumberLiteralType = function (tsType) {
+      // tslint:disable-next-line:no-bitwise
+      return (tsType.getFlags() & ts.TypeFlags.NumberLiteral) !== 0;
+    };
+    if (!isNumberLiteralType(statusArgumentType)) {
+      throw new exceptions_1.GenerateMetadataError('@Res() requires the type to be TsoaResponse<HTTPStatusCode, ResBody>', parameter);
+    }
+    var status = statusArgumentType.value + '';
+    var type = new typeResolver_1.TypeResolver(typeNode.typeArguments[1], this.current, typeNode).resolve();
+    return {
+      description: this.getParameterDescription(parameter) || '',
+      in: 'res',
+      name: status,
+      parameterName: parameterName,
+      examples: this.getParameterExample(parameter, parameterName),
+      required: true,
+      type: type,
+      schema: type,
+      validators: {},
     };
   };
   ParameterGenerator.prototype.getBodyPropParameter = function (parameter) {
@@ -137,6 +178,12 @@ var ParameterGenerator = /** @class */ (function () {
       required: !parameter.questionToken && !parameter.initializer,
       validators: validatorUtils_1.getParameterValidators(this.parameter, parameterName),
     };
+    if (this.getQueryParamterIsHidden(parameter)) {
+      if (commonProperties.required) {
+        throw new exceptions_1.GenerateMetadataError("@Query('" + parameterName + "') Can't support @Hidden because it is required (does not allow undefined and does not have a default value).");
+      }
+      return null;
+    }
     if (type.dataType === 'array') {
       var arrayType = type;
       if (!this.supportPathDataType(arrayType.elementType)) {
@@ -186,21 +233,23 @@ var ParameterGenerator = /** @class */ (function () {
     return undefined;
   };
   ParameterGenerator.prototype.getParameterExample = function (node, parameterName) {
-    var example = jsDocUtils_1
+    var examples = jsDocUtils_1
       .getJSDocTags(node.parent, function (tag) {
-        return tag.tagName.text === 'example' && !!tag.comment && tag.comment.startsWith(parameterName);
+        return (tag.tagName.text === 'example' || tag.tagName.escapedText === 'example') && !!tag.comment && tag.comment.startsWith(parameterName);
       })
       .map(function (tag) {
-        return (tag.comment || '').split(' ')[1];
-      })[0];
-    if (example) {
-      try {
-        return JSON.parse(example);
-      } catch (_a) {
-        return undefined;
-      }
-    } else {
+        return (tag.comment || '').replace(parameterName + ' ', '').replace(/\r/g, '');
+      });
+    if (examples.length === 0) {
       return undefined;
+    } else {
+      try {
+        return examples.map(function (example) {
+          return JSON.parse(example);
+        });
+      } catch (e) {
+        throw new exceptions_1.GenerateMetadataError('JSON format is incorrect: ' + e.message);
+      }
     }
   };
   ParameterGenerator.prototype.supportBodyMethod = function (method) {
@@ -209,7 +258,7 @@ var ParameterGenerator = /** @class */ (function () {
     });
   };
   ParameterGenerator.prototype.supportParameterDecorator = function (decoratorName) {
-    return ['header', 'query', 'path', 'body', 'bodyprop', 'request'].some(function (d) {
+    return ['header', 'query', 'path', 'body', 'bodyprop', 'request', 'res'].some(function (d) {
       return d === decoratorName.toLocaleLowerCase();
     });
   };
@@ -244,6 +293,19 @@ var ParameterGenerator = /** @class */ (function () {
       typeNode = this.current.typeChecker.typeToTypeNode(type);
     }
     return new typeResolver_1.TypeResolver(typeNode, this.current, parameter).resolve();
+  };
+  ParameterGenerator.prototype.getQueryParamterIsHidden = function (parameter) {
+    var hiddenDecorators = decoratorUtils_1.getDecorators(parameter, function (identifier) {
+      return identifier.text === 'Hidden';
+    });
+    if (!hiddenDecorators || !hiddenDecorators.length) {
+      return false;
+    }
+    if (hiddenDecorators.length > 1) {
+      var parameterName = parameter.name.text;
+      throw new exceptions_1.GenerateMetadataError("Only one Hidden decorator allowed on @Query('" + parameterName + "').");
+    }
+    return true;
   };
   return ParameterGenerator;
 })();

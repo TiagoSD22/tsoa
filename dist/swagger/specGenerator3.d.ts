@@ -5,7 +5,6 @@ import { Swagger } from './swagger';
 /**
  * TODO:
  * Handle formData parameters
- * Handle tags
  * Handle requestBodies of type other than json
  * Handle requestBodies as reusable objects
  * Handle headers, examples, responses, etc.
@@ -20,6 +19,8 @@ export declare class SpecGenerator3 extends SpecGenerator {
   private buildInfo;
   private buildComponents;
   private translateSecurityDefinitions;
+  private hasOAuthFlow;
+  private hasOAuthFlows;
   private buildServers;
   private buildSchema;
   private buildPaths;
@@ -34,6 +35,7 @@ export declare class SpecGenerator3 extends SpecGenerator {
     [propertyName: string]: Swagger.Schema3;
   };
   protected getSwaggerTypeForReferenceType(referenceType: Tsoa.ReferenceType): Swagger.BaseSchema;
+  protected getSwaggerTypeForPrimitiveType(dataType: Tsoa.PrimitiveTypeLiteral): Swagger.Schema;
   protected getSwaggerTypeForUnionType(
     type: Tsoa.UnionType,
   ):

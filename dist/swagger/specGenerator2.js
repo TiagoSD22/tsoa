@@ -108,11 +108,17 @@ var SpecGenerator2 = /** @class */ (function (_super) {
     if (this.config.license) {
       spec.info.license = { name: this.config.license };
     }
+    if (this.config.contact) {
+      spec.info.contact = this.config.contact;
+    }
     if (this.config.spec) {
       this.config.specMerging = this.config.specMerging || 'immediate';
       var mergeFuncs = {
         immediate: Object.assign,
         recursive: require('merge').recursive,
+        deepmerge: function (spec, merge) {
+          return require('deepmerge').all([spec, merge]);
+        },
       };
       spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
     }
@@ -218,7 +224,7 @@ var SpecGenerator2 = /** @class */ (function (_super) {
     }
     pathMethod.parameters = method.parameters
       .filter(function (p) {
-        return !(p.in === 'request' || p.in === 'body-prop');
+        return !(p.in === 'request' || p.in === 'body-prop' || p.in === 'res');
       })
       .map(function (p) {
         return _this.buildParameter(p);
@@ -234,6 +240,9 @@ var SpecGenerator2 = /** @class */ (function (_super) {
     ) {
       throw new Error('Only one body parameter allowed per controller method.');
     }
+    method.extensions.forEach(function (ext) {
+      return (pathMethod[ext.key] = ext.value);
+    });
   };
   SpecGenerator2.prototype.buildOperation = function (controllerName, method) {
     var _this = this;
@@ -245,8 +254,8 @@ var SpecGenerator2 = /** @class */ (function (_super) {
       if (res.schema && !isVoidType_1.isVoidType(res.schema)) {
         swaggerResponses[res.name].schema = _this.getSwaggerType(res.schema);
       }
-      if (res.examples) {
-        swaggerResponses[res.name].examples = { 'application/json': res.examples };
+      if (res.examples && res.examples[0]) {
+        swaggerResponses[res.name].examples = { 'application/json': res.examples[0] };
       }
     });
     return {
@@ -267,7 +276,7 @@ var SpecGenerator2 = /** @class */ (function (_super) {
         properties[p.name] = _this.getSwaggerType(p.type);
         properties[p.name].default = p.default;
         properties[p.name].description = p.description;
-        properties[p.name].example = p.example;
+        properties[p.name].example = p.example === undefined ? undefined : p.example[0];
         if (p.required) {
           required.push(p.name);
         }
@@ -293,7 +302,6 @@ var SpecGenerator2 = /** @class */ (function (_super) {
     var parameter = {
       default: source.default,
       description: source.description,
-      example: source.example,
       in: source.in,
       name: source.name,
       required: source.required,
